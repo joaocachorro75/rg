@@ -6,8 +6,8 @@ WORKDIR /app
 # Copia arquivos de dependência primeiro para aproveitar cache do Docker
 COPY package*.json ./
 
-# Instala dependências (npm ci é mais rápido e seguro para builds)
-RUN npm ci
+# Instala dependências (npm install funciona mesmo sem package-lock.json)
+RUN npm install
 
 # Copia o restante do código fonte
 COPY . .
@@ -24,7 +24,7 @@ RUN rm -rf /usr/share/nginx/html/*
 # Copia os arquivos estáticos gerados no estágio anterior
 COPY --from=builder /app/dist /usr/share/nginx/html
 
-# Configuração básica de cache para arquivos estáticos (opcional, mas recomendado)
+# Configuração básica de cache para arquivos estáticos
 RUN echo 'server { \
     listen 80; \
     server_name localhost; \
