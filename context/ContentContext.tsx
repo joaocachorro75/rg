@@ -8,20 +8,20 @@ export interface Product {
   category: string;
   description?: string;
   price?: string;
-  isFeatured?: boolean; // Se true, aparece na Home page
+  isFeatured?: boolean;
 }
 
 export interface Lead {
   id: string;
   name: string;
-  phone: string; // Formato 5511999999999
+  phone: string;
   date: string;
 }
 
 export interface SiteContent {
   global: {
     logoUrl: string;
-    whatsapp: string; // Apenas números
+    whatsapp: string;
     email: string;
     address: string;
     instagramUrl: string;
@@ -32,10 +32,10 @@ export interface SiteContent {
     subtitle: string;
     bgImage: string;
     highlightText: string;
-    highlightImage: string; // Imagem da Tábua Gourmet/Destaque
+    highlightImage: string;
   };
   leadForm: {
-    image: string; // Imagem lateral do formulário
+    image: string;
   };
   products: Product[];
 }
@@ -43,17 +43,18 @@ export interface SiteContent {
 interface ContentContextType {
   content: SiteContent;
   leads: Lead[];
-  updateContent: (newContent: SiteContent) => void;
-  addLead: (name: string, rawPhone: string) => void;
-  removeLead: (id: string) => void;
+  isLoading: boolean;
+  updateContent: (newContent: SiteContent) => Promise<void>;
+  addLead: (name: string, rawPhone: string) => Promise<void>;
+  removeLead: (id: string) => Promise<void>;
   downloadLeadsCSV: () => void;
-  resetToDefaults: () => void;
+  resetToDefaults: () => Promise<void>;
 }
 
-// Conteúdo Padrão Inicial
+// Conteúdo Padrão (Fallback enquanto carrega)
 const defaultContent: SiteContent = {
   global: {
-    logoUrl: "/logo.png",
+    logoUrl: "",
     whatsapp: "5511999999999",
     email: "contato@rgfrios.com.br",
     address: "Rua dos Frios, 123 - Centro, São Paulo - SP",
@@ -62,22 +63,15 @@ const defaultContent: SiteContent = {
   },
   hero: {
     title: "O Sabor Que Faz a Diferença",
-    subtitle: "A RG Frios e Fatiados traz para sua mesa e seu negócio a melhor seleção de frios, com cortes precisos e frescor garantido todos os dias.",
+    subtitle: "Carregando informações...",
     bgImage: "https://images.unsplash.com/photo-1552594619-338276166548?q=80&w=2070&auto=format&fit=crop",
-    highlightText: "Qualidade Premium Garantida",
+    highlightText: "Qualidade Premium",
     highlightImage: "https://images.unsplash.com/photo-1621342674251-c03534d0b043?q=80&w=800"
   },
   leadForm: {
     image: "https://images.unsplash.com/photo-1630404456637-d2004d168e31?q=80&w=800&auto=format&fit=crop"
   },
-  products: [
-    { id: 1, name: "Mussarela Fatiada", image: "https://images.unsplash.com/photo-1624806992098-b861295e8656?q=80&w=600&auto=format&fit=crop", category: "Queijos", description: "Mussarela de primeira qualidade, fatiada na hora.", price: "R$ 45,90/kg", isFeatured: true },
-    { id: 2, name: "Presunto Cozido", image: "https://images.unsplash.com/photo-1606850827253-67845772392b?q=80&w=600&auto=format&fit=crop", category: "Fatiados", description: "Presunto suculento e magro.", price: "R$ 39,90/kg", isFeatured: true },
-    { id: 3, name: "Salame Italiano", image: "https://images.unsplash.com/photo-1525286102393-863a6e9a7e0d?q=80&w=600&auto=format&fit=crop", category: "Embutidos", description: "Sabor intenso e cura perfeita.", price: "R$ 89,90/kg", isFeatured: true },
-    { id: 4, name: "Peito de Peru", image: "https://images.unsplash.com/photo-1587394073380-6060c5da8826?q=80&w=600&auto=format&fit=crop", category: "Light", description: "Opção leve e saudável para seus lanches.", price: "R$ 65,00/kg", isFeatured: true },
-    { id: 5, name: "Mortadela Defumada", image: "https://images.unsplash.com/photo-1619864205510-7561219b678f?q=80&w=600&auto=format&fit=crop", category: "Tradicional", description: "O clássico do café da manhã.", price: "R$ 29,90/kg", isFeatured: true },
-    { id: 6, name: "Queijo Prato", image: "https://images.unsplash.com/photo-1486297678162-eb2a19b0a32d?q=80&w=600&auto=format&fit=crop", category: "Queijos", description: "Derrete fácil, ideal para sanduíches.", price: "R$ 48,90/kg", isFeatured: true }
-  ]
+  products: []
 };
 
 const ContentContext = createContext<ContentContextType | undefined>(undefined);
@@ -85,55 +79,47 @@ const ContentContext = createContext<ContentContextType | undefined>(undefined);
 export const ContentProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [content, setContent] = useState<SiteContent>(defaultContent);
   const [leads, setLeads] = useState<Lead[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
 
-  // Carregar do LocalStorage ao iniciar
+  // Carregar dados da API ao iniciar
   useEffect(() => {
-    const savedContent = localStorage.getItem('rg_site_content');
-    const savedLeads = localStorage.getItem('rg_site_leads');
-
-    if (savedContent) {
-      try {
-        const parsed = JSON.parse(savedContent);
-        // Merge cuidadoso para garantir que novos campos (como highlightImage e leadForm) existam mesmo se o localStorage for antigo
-        setContent(prev => ({
-          ...defaultContent,
-          ...parsed,
-          hero: { ...defaultContent.hero, ...(parsed.hero || {}) },
-          leadForm: { ...defaultContent.leadForm, ...(parsed.leadForm || {}) },
-          global: { ...defaultContent.global, ...(parsed.global || {}) }
-        }));
-      } catch (e) {
-        console.error("Erro ao carregar conteúdo salvo", e);
-      }
-    }
-    
-    if (savedLeads) {
-      try {
-        setLeads(JSON.parse(savedLeads));
-      } catch (e) {
-        console.error("Erro ao carregar leads", e);
-      }
-    }
+    fetchData();
   }, []);
 
-  const updateContent = (newContent: SiteContent) => {
-    setContent(newContent);
-    localStorage.setItem('rg_site_content', JSON.stringify(newContent));
+  const fetchData = async () => {
+    try {
+      const response = await fetch('/api/data');
+      if (response.ok) {
+        const data = await response.json();
+        if (data.content) setContent(data.content);
+        if (data.leads) setLeads(data.leads);
+      }
+    } catch (error) {
+      console.error("Erro ao conectar com servidor:", error);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
-  const addLead = (name: string, rawPhone: string) => {
-    // Formatar telefone para padrão internacional (55 + DDD + Numero)
-    // Remove tudo que não for número
-    let nums = rawPhone.replace(/\D/g, "");
-    
-    // Se começar com 0, remove
-    if (nums.startsWith("0")) nums = nums.substring(1);
-    
-    // Se não tiver 55 (DDI Brasil), adiciona. Assumindo que se tiver < 12 dígitos, falta o DDI
-    // Ex: 11999999999 (11 digitos) -> adiciona 55
-    if (nums.length <= 11) {
-      nums = "55" + nums;
+  const updateContent = async (newContent: SiteContent) => {
+    // Atualiza localmente para feedback instantâneo
+    setContent(newContent);
+    try {
+      await fetch('/api/content', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newContent)
+      });
+    } catch (error) {
+      console.error("Erro ao salvar conteúdo:", error);
+      alert("Erro ao salvar no servidor.");
     }
+  };
+
+  const addLead = async (name: string, rawPhone: string) => {
+    let nums = rawPhone.replace(/\D/g, "");
+    if (nums.startsWith("0")) nums = nums.substring(1);
+    if (nums.length <= 11) nums = "55" + nums;
 
     const newLead: Lead = {
       id: Date.now().toString(),
@@ -142,16 +128,28 @@ export const ContentProvider: React.FC<{ children: ReactNode }> = ({ children })
       date: new Date().toLocaleString('pt-BR')
     };
 
-    const updatedLeads = [...leads, newLead];
-    setLeads(updatedLeads);
-    localStorage.setItem('rg_site_leads', JSON.stringify(updatedLeads));
+    // Atualiza localmente
+    setLeads(prev => [...prev, newLead]);
+
+    try {
+      await fetch('/api/leads', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newLead)
+      });
+    } catch (error) {
+      console.error("Erro ao salvar lead:", error);
+    }
   };
 
-  const removeLead = (id: string) => {
+  const removeLead = async (id: string) => {
     if (window.confirm("Tem certeza que deseja excluir este lead?")) {
-      const updatedLeads = leads.filter(l => l.id !== id);
-      setLeads(updatedLeads);
-      localStorage.setItem('rg_site_leads', JSON.stringify(updatedLeads));
+      setLeads(prev => prev.filter(l => l.id !== id));
+      try {
+        await fetch(`/api/leads/${id}`, { method: 'DELETE' });
+      } catch (error) {
+        console.error("Erro ao remover lead:", error);
+      }
     }
   };
 
@@ -174,14 +172,23 @@ export const ContentProvider: React.FC<{ children: ReactNode }> = ({ children })
     document.body.removeChild(link);
   };
 
-  const resetToDefaults = () => {
-    if (confirm("Tem certeza? Isso apagará todas as edições de texto e imagens (Leads serão mantidos).")) {
-      updateContent(defaultContent);
+  const resetToDefaults = async () => {
+    if (confirm("Tem certeza? Isso apagará todas as edições de texto e imagens.")) {
+      try {
+        const res = await fetch('/api/reset', { method: 'POST' });
+        if (res.ok) {
+          const data = await res.json();
+          setContent(data.content);
+          window.location.reload();
+        }
+      } catch (error) {
+        console.error("Erro ao resetar:", error);
+      }
     }
   }
 
   return (
-    <ContentContext.Provider value={{ content, leads, updateContent, addLead, removeLead, downloadLeadsCSV, resetToDefaults }}>
+    <ContentContext.Provider value={{ content, leads, isLoading, updateContent, addLead, removeLead, downloadLeadsCSV, resetToDefaults }}>
       {children}
     </ContentContext.Provider>
   );
