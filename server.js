@@ -14,7 +14,10 @@ const DB_FILE = path.join(DATA_DIR, 'db.json');
 
 // Middleware
 app.use(cors());
-app.use(express.json({ limit: '50mb' })); // Limite aumentado para imagens base64
+// Aumentado para 500mb para garantir que o arquivo db.json possa crescer
+// com muitas imagens sem bloquear o salvamento (Erro 413 Payload Too Large)
+app.use(express.json({ limit: '500mb' })); 
+app.use(express.urlencoded({ limit: '500mb', extended: true }));
 
 // Dados padrão iniciais
 const defaultData = {
@@ -69,12 +72,14 @@ async function readDB() {
     const data = await fs.readFile(DB_FILE, 'utf-8');
     return JSON.parse(data);
   } catch (error) {
+    // Se o arquivo estiver corrompido ou vazio, retorna o padrão
     return defaultData;
   }
 }
 
 // Escrever DB
 async function writeDB(data) {
+  // Escreve com indentação para facilitar debug se necessário
   await fs.writeFile(DB_FILE, JSON.stringify(data, null, 2));
 }
 
@@ -88,10 +93,17 @@ app.post('/api/content', async (req, res) => {
   try {
     const currentData = await readDB();
     const newContent = req.body;
-    currentData.content = newContent;
-    await writeDB(currentData);
-    res.json({ success: true, content: currentData.content });
+    
+    // Mantém os leads existentes, atualiza apenas o conteúdo
+    const dataToSave = {
+        ...currentData,
+        content: newContent
+    };
+    
+    await writeDB(dataToSave);
+    res.json({ success: true, content: dataToSave.content });
   } catch (error) {
+    console.error('Erro ao salvar:', error);
     res.status(500).json({ error: 'Falha ao salvar conteúdo' });
   }
 });
@@ -100,10 +112,17 @@ app.post('/api/leads', async (req, res) => {
   try {
     const currentData = await readDB();
     const newLead = req.body;
+    
+    // Garante que leads seja um array
+    if (!Array.isArray(currentData.leads)) {
+        currentData.leads = [];
+    }
+    
     currentData.leads.push(newLead);
     await writeDB(currentData);
     res.json({ success: true, leads: currentData.leads });
   } catch (error) {
+    console.error('Erro ao salvar lead:', error);
     res.status(500).json({ error: 'Falha ao salvar lead' });
   }
 });
@@ -112,8 +131,12 @@ app.delete('/api/leads/:id', async (req, res) => {
   try {
     const { id } = req.params;
     const currentData = await readDB();
-    currentData.leads = currentData.leads.filter(l => l.id !== id);
-    await writeDB(currentData);
+    
+    if (Array.isArray(currentData.leads)) {
+        currentData.leads = currentData.leads.filter(l => l.id !== id);
+        await writeDB(currentData);
+    }
+    
     res.json({ success: true, leads: currentData.leads });
   } catch (error) {
     res.status(500).json({ error: 'Falha ao remover lead' });
@@ -123,10 +146,10 @@ app.delete('/api/leads/:id', async (req, res) => {
 app.post('/api/reset', async (req, res) => {
   try {
     const currentData = await readDB();
-    // Mantém os leads, reseta o conteúdo
+    // Mantém os leads, reseta o conteúdo para o padrão
     const newData = {
       ...defaultData,
-      leads: currentData.leads
+      leads: currentData.leads || []
     };
     await writeDB(newData);
     res.json({ success: true, content: newData.content });
