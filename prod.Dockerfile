@@ -27,7 +27,7 @@ COPY server.js ./
 COPY --from=builder /app/dist ./dist
 
 # Cria diretório de dados para volume persistente
-RUN mkdir -p /app/data
+RUN mkdir -p /data
 
 ENV PORT=80
 EXPOSE 80
